@@ -1,0 +1,443 @@
+import React, { useState, useEffect } from 'react';
+import { Play, Pause, RotateCcw, ChevronRight, Info } from 'lucide-react';
+
+const BellmanFordVisualizer = () => {
+  const [graph, setGraph] = useState({
+    nodes: [
+      { id: 'A', x: 100, y: 150 },
+      { id: 'B', x: 250, y: 50 },
+      { id: 'C', x: 250, y: 250 },
+      { id: 'D', x: 400, y: 150 },
+      { id: 'E', x: 550, y: 150 }
+    ],
+    edges: [
+      { from: 'A', to: 'B', weight: 4 },
+      { from: 'A', to: 'C', weight: 2 },
+      { from: 'B', to: 'D', weight: 3 },
+      { from: 'C', to: 'D', weight: 1 },
+      { from: 'C', to: 'B', weight: -3 },
+      { from: 'D', to: 'E', weight: 2 }
+    ]
+  });
+
+  const [mode, setMode] = useState('compare'); // 'compare' or 'single'
+  const [isRunning, setIsRunning] = useState(false);
+  
+  // Bellman-Ford state
+  const [bfStep, setBfStep] = useState(0);
+  const [bfDistances, setBfDistances] = useState({});
+  const [bfPrevious, setBfPrevious] = useState({});
+  const [bfCurrentEdge, setBfCurrentEdge] = useState(null);
+  const [bfIteration, setBfIteration] = useState(0);
+  const [bfNegativeCycle, setBfNegativeCycle] = useState(false);
+  const [bfComplete, setBfComplete] = useState(false);
+  
+  // Dijkstra state
+  const [djStep, setDjStep] = useState(0);
+  const [djDistances, setDjDistances] = useState({});
+  const [djPrevious, setDjPrevious] = useState({});
+  const [djCurrentNode, setDjCurrentNode] = useState(null);
+  const [djVisited, setDjVisited] = useState(new Set());
+  const [djComplete, setDjComplete] = useState(false);
+  const [djError, setDjError] = useState(false);
+
+  const sourceNode = 'A';
+
+  const initializeAlgorithms = () => {
+    const dist = {};
+    graph.nodes.forEach(node => {
+      dist[node.id] = node.id === sourceNode ? 0 : Infinity;
+    });
+    
+    // Initialize Bellman-Ford
+    setBfDistances({ ...dist });
+    setBfPrevious({});
+    setBfStep(0);
+    setBfIteration(0);
+    setBfCurrentEdge(null);
+    setBfNegativeCycle(false);
+    setBfComplete(false);
+    
+    // Initialize Dijkstra
+    setDjDistances({ ...dist });
+    setDjPrevious({});
+    setDjStep(0);
+    setDjCurrentNode(sourceNode);
+    setDjVisited(new Set());
+    setDjComplete(false);
+    setDjError(false);
+  };
+
+  useEffect(() => {
+    initializeAlgorithms();
+  }, []);
+
+  const bellmanFordStep = () => {
+    if (bfComplete) return;
+    
+    const n = graph.nodes.length;
+    const totalSteps = (n - 1) * graph.edges.length;
+    
+    if (bfStep < totalSteps) {
+      const currentIteration = Math.floor(bfStep / graph.edges.length);
+      const edgeIndex = bfStep % graph.edges.length;
+      const edge = graph.edges[edgeIndex];
+      
+      setBfIteration(currentIteration + 1);
+      setBfCurrentEdge(edge);
+      
+      const newDistances = { ...bfDistances };
+      const newPrevious = { ...bfPrevious };
+      
+      if (bfDistances[edge.from] !== Infinity) {
+        const newDist = bfDistances[edge.from] + edge.weight;
+        if (newDist < bfDistances[edge.to]) {
+          newDistances[edge.to] = newDist;
+          newPrevious[edge.to] = edge.from;
+        }
+      }
+      
+      setBfDistances(newDistances);
+      setBfPrevious(newPrevious);
+      setBfStep(bfStep + 1);
+    } else if (bfStep === totalSteps) {
+      // Check for negative cycle
+      let negativeCycle = false;
+      for (let edge of graph.edges) {
+        if (bfDistances[edge.from] !== Infinity) {
+          const newDist = bfDistances[edge.from] + edge.weight;
+          if (newDist < bfDistances[edge.to]) {
+            negativeCycle = true;
+            break;
+          }
+        }
+      }
+      setBfNegativeCycle(negativeCycle);
+      setBfStep(bfStep + 1);
+      setBfComplete(true);
+      setBfCurrentEdge(null);
+    }
+  };
+
+  const dijkstraStep = () => {
+    if (djComplete || djError) return;
+    
+    // Check for negative edges
+    const hasNegativeEdge = graph.edges.some(e => e.weight < 0);
+    if (hasNegativeEdge && djStep === 0) {
+      setDjError(true);
+      setDjComplete(true);
+      return;
+    }
+    
+    const visited = new Set(djVisited);
+    
+    if (visited.size < graph.nodes.length) {
+      let minNode = null;
+      let minDist = Infinity;
+      
+      graph.nodes.forEach(node => {
+        if (!visited.has(node.id) && djDistances[node.id] < minDist) {
+          minDist = djDistances[node.id];
+          minNode = node.id;
+        }
+      });
+      
+      if (minNode === null || minDist === Infinity) {
+        setDjComplete(true);
+        setDjCurrentNode(null);
+        return;
+      }
+      
+      setDjCurrentNode(minNode);
+      visited.add(minNode);
+      setDjVisited(visited);
+      
+      const newDistances = { ...djDistances };
+      const newPrevious = { ...djPrevious };
+      
+      graph.edges.forEach(edge => {
+        if (edge.from === minNode) {
+          const newDist = djDistances[minNode] + edge.weight;
+          if (newDist < djDistances[edge.to] && !visited.has(edge.to)) {
+            newDistances[edge.to] = newDist;
+            newPrevious[edge.to] = minNode;
+          }
+        }
+      });
+      
+      setDjDistances(newDistances);
+      setDjPrevious(newPrevious);
+      setDjStep(djStep + 1);
+    } else {
+      setDjComplete(true);
+      setDjCurrentNode(null);
+    }
+  };
+
+  useEffect(() => {
+    if (isRunning) {
+      const timer = setTimeout(() => {
+        if (!bfComplete) bellmanFordStep();
+        if (!djComplete && !djError) dijkstraStep();
+        
+        if (bfComplete && (djComplete || djError)) {
+          setIsRunning(false);
+        }
+      }, 600);
+      return () => clearTimeout(timer);
+    }
+  }, [isRunning, bfStep, djStep, bfComplete, djComplete]);
+
+  const reset = () => {
+    setIsRunning(false);
+    initializeAlgorithms();
+  };
+
+  const toggleRunning = () => {
+    setIsRunning(!isRunning);
+  };
+
+  const stepForward = () => {
+    if (!bfComplete) bellmanFordStep();
+    if (!djComplete && !djError) dijkstraStep();
+  };
+
+  const renderGraph = (distances, previous, currentEdge, currentNode, algorithm) => (
+    <svg width="100%" height="350" className="bg-slate-900 rounded">
+      {/* Draw edges */}
+      {graph.edges.map((edge, idx) => {
+        const fromNode = graph.nodes.find(n => n.id === edge.from);
+        const toNode = graph.nodes.find(n => n.id === edge.to);
+        const isActive = algorithm === 'bellman-ford' 
+          ? (currentEdge && currentEdge.from === edge.from && currentEdge.to === edge.to)
+          : (currentNode === edge.from);
+        const isInPath = previous[edge.to] === edge.from;
+        
+        return (
+          <g key={idx}>
+            <defs>
+              <marker
+                id={`arrowhead-${algorithm}-${idx}`}
+                markerWidth="10"
+                markerHeight="10"
+                refX="9"
+                refY="3"
+                orient="auto"
+              >
+                <polygon
+                  points="0 0, 10 3, 0 6"
+                  fill={isActive ? '#fbbf24' : isInPath ? '#34d399' : '#64748b'}
+                />
+              </marker>
+            </defs>
+            <line
+              x1={fromNode.x}
+              y1={fromNode.y}
+              x2={toNode.x}
+              y2={toNode.y}
+              stroke={isActive ? '#fbbf24' : isInPath ? '#34d399' : '#64748b'}
+              strokeWidth={isActive ? 3 : isInPath ? 2.5 : 2}
+              markerEnd={`url(#arrowhead-${algorithm}-${idx})`}
+            />
+            <text
+              x={(fromNode.x + toNode.x) / 2}
+              y={(fromNode.y + toNode.y) / 2 - 10}
+              fill={edge.weight < 0 ? '#ef4444' : '#fff'}
+              fontSize="13"
+              fontWeight="bold"
+              textAnchor="middle"
+            >
+              {edge.weight}
+            </text>
+          </g>
+        );
+      })}
+      
+      {/* Draw nodes */}
+      {graph.nodes.map(node => {
+        const isSource = node.id === sourceNode;
+        const isCurrent = currentNode === node.id;
+        const isVisited = algorithm === 'dijkstra' && djVisited.has(node.id);
+        
+        return (
+          <g key={node.id}>
+            <circle
+              cx={node.x}
+              cy={node.y}
+              r="25"
+              fill={isSource ? '#3b82f6' : isCurrent ? '#fbbf24' : isVisited ? '#8b5cf6' : distances[node.id] === Infinity ? '#475569' : '#8b5cf6'}
+              stroke={isCurrent ? '#fbbf24' : '#fff'}
+              strokeWidth={isCurrent ? 3 : 2}
+            />
+            <text
+              x={node.x}
+              y={node.y + 5}
+              fill="#fff"
+              fontSize="16"
+              fontWeight="bold"
+              textAnchor="middle"
+            >
+              {node.id}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+
+  const renderDistanceTable = (distances, title, color) => (
+    <div>
+      <h3 className="text-sm font-semibold mb-2">{title}</h3>
+      <div className="space-y-1">
+        {graph.nodes.map(node => (
+          <div key={node.id} className="flex justify-between items-center bg-slate-700 rounded px-2 py-1 text-sm">
+            <span className="font-medium">{node.id}</span>
+            <span className={`font-mono ${distances[node.id] === Infinity ? 'text-slate-500' : color}`}>
+              {distances[node.id] === Infinity ? '∞' : distances[node.id]}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="w-full min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 text-white p-6 overflow-auto">
+      <div className="max-w-7xl mx-auto">
+        <h1 className="text-4xl font-bold mb-2 text-center bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">
+          Bellman-Ford vs Dijkstra Algorithm
+        </h1>
+        <p className="text-center text-slate-400 mb-6">Side-by-side comparison of shortest path algorithms</p>
+        
+        {/* Controls */}
+        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700 mb-6">
+          <div className="flex items-center justify-center gap-4">
+            <button 
+              onClick={toggleRunning}
+              disabled={(bfComplete && djComplete) || djError}
+              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded px-6 py-2 flex items-center gap-2"
+            >
+              {isRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+              {isRunning ? 'Pause' : 'Run Both'}
+            </button>
+            <button 
+              onClick={stepForward}
+              disabled={isRunning || (bfComplete && djComplete) || djError}
+              className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed rounded px-6 py-2 flex items-center gap-2"
+            >
+              <ChevronRight className="w-4 h-4" />
+              Step
+            </button>
+            <button 
+              onClick={reset}
+              className="bg-slate-600 hover:bg-slate-700 rounded px-6 py-2 flex items-center gap-2"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Reset
+            </button>
+          </div>
+        </div>
+
+        {/* Side by Side Comparison */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Bellman-Ford */}
+          <div className="bg-slate-800 rounded-lg p-6 border border-blue-500">
+            <h2 className="text-2xl font-bold mb-4 text-blue-400 flex items-center gap-2">
+              <Info className="w-6 h-6" />
+              Bellman-Ford Algorithm
+            </h2>
+            
+            <div className="bg-slate-700 rounded p-3 mb-4">
+              <div className="text-sm text-slate-300">Iteration: {bfIteration} / {graph.nodes.length - 1}</div>
+              <div className="text-sm text-slate-300">Steps: {bfStep}</div>
+              <div className="text-sm text-slate-300">Status: {bfComplete ? '✓ Complete' : 'Running...'}</div>
+            </div>
+            
+            {bfNegativeCycle && (
+              <div className="bg-red-900 border border-red-700 rounded p-3 text-sm mb-4">
+                ⚠️ Negative cycle detected!
+              </div>
+            )}
+            
+            {renderGraph(bfDistances, bfPrevious, bfCurrentEdge, null, 'bellman-ford')}
+            
+            <div className="mt-4">
+              {renderDistanceTable(bfDistances, 'Distances from A', 'text-blue-400')}
+            </div>
+            
+            <div className="mt-4 bg-slate-700 rounded p-3 text-sm">
+              <h4 className="font-semibold mb-2">Characteristics:</h4>
+              <ul className="space-y-1 text-slate-300">
+                <li>✓ Handles negative weights</li>
+                <li>✓ Detects negative cycles</li>
+                <li>• Time: O(V·E)</li>
+                <li>• Relaxes all edges V-1 times</li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Dijkstra */}
+          <div className="bg-slate-800 rounded-lg p-6 border border-purple-500">
+            <h2 className="text-2xl font-bold mb-4 text-purple-400 flex items-center gap-2">
+              <Info className="w-6 h-6" />
+              Dijkstra's Algorithm
+            </h2>
+            
+            <div className="bg-slate-700 rounded p-3 mb-4">
+              <div className="text-sm text-slate-300">Current Node: {djCurrentNode || 'None'}</div>
+              <div className="text-sm text-slate-300">Visited: {djVisited.size} / {graph.nodes.length}</div>
+              <div className="text-sm text-slate-300">Status: {djError ? '✗ Failed' : djComplete ? '✓ Complete' : 'Running...'}</div>
+            </div>
+            
+            {djError && (
+              <div className="bg-red-900 border border-red-700 rounded p-3 text-sm mb-4">
+                ✗ Cannot run: Negative edge weights detected!
+              </div>
+            )}
+            
+            {renderGraph(djDistances, djPrevious, null, djCurrentNode, 'dijkstra')}
+            
+            <div className="mt-4">
+              {renderDistanceTable(djDistances, 'Distances from A', 'text-purple-400')}
+            </div>
+            
+            <div className="mt-4 bg-slate-700 rounded p-3 text-sm">
+              <h4 className="font-semibold mb-2">Characteristics:</h4>
+              <ul className="space-y-1 text-slate-300">
+                <li>✗ Requires non-negative weights</li>
+                <li>✗ Cannot detect negative cycles</li>
+                <li>• Time: O((V+E)log V)</li>
+                <li>• Greedy: visits closest first</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Summary Comparison */}
+        <div className="mt-6 bg-slate-800 rounded-lg p-6 border border-slate-700">
+          <h3 className="text-xl font-bold mb-4">Key Differences Summary</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            <div className="bg-slate-700 rounded p-4">
+              <h4 className="font-semibold text-emerald-400 mb-2">Edge Weights</h4>
+              <p className="text-slate-300"><strong>Bellman-Ford:</strong> Works with negative weights</p>
+              <p className="text-slate-300 mt-2"><strong>Dijkstra:</strong> Requires non-negative weights only</p>
+            </div>
+            <div className="bg-slate-700 rounded p-4">
+              <h4 className="font-semibold text-amber-400 mb-2">Time Complexity</h4>
+              <p className="text-slate-300"><strong>Bellman-Ford:</strong> O(V·E) - Slower</p>
+              <p className="text-slate-300 mt-2"><strong>Dijkstra:</strong> O((V+E)log V) - Faster</p>
+            </div>
+            <div className="bg-slate-700 rounded p-4">
+              <h4 className="font-semibold text-cyan-400 mb-2">Approach</h4>
+              <p className="text-slate-300"><strong>Bellman-Ford:</strong> Relaxes all edges repeatedly</p>
+              <p className="text-slate-300 mt-2"><strong>Dijkstra:</strong> Greedy - picks closest unvisited node</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default BellmanFordVisualizer;
